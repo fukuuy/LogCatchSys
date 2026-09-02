@@ -1,0 +1,15 @@
+# 编译产物
+*.exe
+*.test
+*.out
+/bin/
+
+# 依赖与模块缓存
+/vendor/
+
+# 环境/IDE
+.env
+.idea/
+.vscode/*
+!.vscode/settings.json
+*.swp
