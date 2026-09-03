@@ -1,42 +1,45 @@
-package logconfig
+package watchconfig
 
 import (
 	"context"
 	"fmt"
+	"path"
 	"runtime"
 	"sync"
-	"path"
+
 	"github.com/fsnotify/fsnotify"
 	"github.com/spf13/viper"
 )
 
 var onceLogConf sync.Once
 
-type ConfigData struct{
-	ConfigKey string
-	ConfigValue string
+type ConfigData struct {
+	ConfigDir    string
+	ConfigPath   string
 	ConfigCancel context.CancelFunc
 }
 
-func ReadConfig(v *viper.Viper) (interface{}, bool) {
-	v.SetConfigName("config")
-	_,filename,_,_ := runtime.Caller(0)
+var CONFIG_NAME = "config"
+
+func ReadConfig(v *viper.Viper) (any, bool) {
+	v.SetConfigName(CONFIG_NAME)
+	_, filename, _, _ := runtime.Caller(0)
 	v.AddConfigPath(path.Dir(filename))
 
 	v.SetConfigType("yaml")
 	if err := v.ReadInConfig(); err != nil {
 		return nil, false
 	}
-	configPaths := v.Get("configpath")
-	if configPaths == nil {
+	configPath := v.Get("configpath")
+	if configPath == nil {
 		return nil, false
 	}
 
-	return configPaths, true
+	return configPath, true
 }
 
-func WatchConfig(v *viper.Viper, ctx context.Context, pathChan chan interface{}) {
-	defer func(){
+func WatchConfigFile(v *viper.Viper, ctx context.Context, pathChan chan any) {
+	defer func() {
 		onceLogConf.Do(func() {
 			fmt.Println("watch config goroutine exit")
 			if err := recover(); err != nil {
@@ -46,14 +49,14 @@ func WatchConfig(v *viper.Viper, ctx context.Context, pathChan chan interface{})
 		})
 	}()
 
-	// 设置监听配置回调函数
-	v.OnConfigChange(func(event fsnotify.Event){
+	// 设置监听配置文件的回调函数
+	v.OnConfigChange(func(event fsnotify.Event) {
 		fmt.Printf("config file: %s changed: %s\n", event.Name, event.String())
-		configPaths := v.Get("configpath")
-		if configPaths == nil {
+		configPath := v.Get("configpath")
+		if configPath == nil {
 			return
 		}
-		pathChan <- configPaths
+		pathChan <- configPath
 	})
 
 	// 开始监听配置文件变化

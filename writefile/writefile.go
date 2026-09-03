@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 	"github.com/spf13/viper"
-	"logcatchsys/logconfig"
+	"logcatchsys/config"
 )
 
 func writeLog(wg *sync.WaitGroup, datapath string) {
@@ -42,7 +42,7 @@ func writeLog(wg *sync.WaitGroup, datapath string) {
 
 func main() {
 	v:=viper.New()
-	configPaths, ok := logconfig.ReadConfig(v)
+	configPaths, ok := watchconfig.ReadConfig(v)
 	if configPaths == nil || !ok {
 		fmt.Println("读取配置文件失败")
 		return

@@ -1,0 +1,11 @@
+configpath: 
+  logdir1: "../logdir1/log.txt"
+  logdir2: "../logdir2/log.txt"
+  logdir3: "../logdir3/log.txt"
+
+etcd:
+  addr: "localhost:2379"
+  logkeys:
+    - "/logs/logdir1"
+    - "/logs/logdir2"
+    - "/logs/logdir3"
