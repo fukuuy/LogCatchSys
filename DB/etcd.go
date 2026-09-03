@@ -14,19 +14,20 @@ import (
 // EtcdConfig 表示单个 etcd key 的运行时状态。
 // Path     : etcd 中存储的 key（如 /logs/logdir1）
 // LogPath  : etcd key 对应的 value，即要监控的日志文件路径
+// Client   : 该 key 独立的 etcd client
 // Ctx/Cancel: 该 key 的日志监控 goroutine 生命周期
 type EtcdConfig struct {
 	Path     string
 	LogPath  string
+	Client   *clientv3.Client
 	Ctx      context.Context
 	Cancel   context.CancelFunc
 	KeyChan  chan string
 	Producer *MQ.KafkaProducer
 }
 
-// EtcdRoot 持有唯一的 etcd client 以及所有被 watch 的 key 状态。
+// EtcdRoot 持有所有被 watch 的 key 状态，每个 key 使用独立的 etcd client。
 type EtcdRoot struct {
-	Client     *clientv3.Client
 	ConfigMap  map[string]*EtcdConfig
 	mu         sync.RWMutex
 	RootCtx    context.Context
@@ -45,24 +46,23 @@ func InitEtcdClient(etcdAddr string) *clientv3.Client {
 	return cli
 }
 
-// NewEtcdRoot 创建 EtcdRoot，持有唯一 client，并为每个 key 启动 watch goroutine。
-func NewEtcdRoot(ctx context.Context, cli *clientv3.Client, logkeys []string, keychan chan string, producer *MQ.KafkaProducer) *EtcdRoot {
+// NewEtcdRoot 创建 EtcdRoot，并为每个 key 创建独立的 etcd client 与 watch goroutine。
+func NewEtcdRoot(ctx context.Context, etcdAddr string, logkeys []string, keychan chan string, producer *MQ.KafkaProducer) *EtcdRoot {
 	rootCtx, rootCancel := context.WithCancel(ctx)
 	root := &EtcdRoot{
-		Client:     cli,
 		ConfigMap:  make(map[string]*EtcdConfig),
 		RootCtx:    rootCtx,
 		RootCancel: rootCancel,
 	}
 
 	for _, key := range logkeys {
-		root.AddKey(key, keychan, producer)
+		root.AddKey(key, etcdAddr, keychan, producer)
 	}
 	return root
 }
 
-// AddKey 新增一个 etcd key 的监控，启动对该 key 的 watch goroutine，并同步维护 ConfigMap。
-func (e *EtcdRoot) AddKey(key string, keychan chan string, producer *MQ.KafkaProducer) {
+// AddKey 新增一个 etcd key 的监控，为其创建独立 client 并启动 watch goroutine。
+func (e *EtcdRoot) AddKey(key string, etcdAddr string, keychan chan string, producer *MQ.KafkaProducer) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
@@ -70,9 +70,16 @@ func (e *EtcdRoot) AddKey(key string, keychan chan string, producer *MQ.KafkaPro
 		return
 	}
 
+	cli := InitEtcdClient(etcdAddr)
+	if cli == nil {
+		fmt.Printf("init etcd client err, skip key: %s\n", key)
+		return
+	}
+
 	ctx, cancel := context.WithCancel(e.RootCtx)
 	cfg := &EtcdConfig{
 		Path:     key,
+		Client:   cli,
 		Ctx:      ctx,
 		Cancel:   cancel,
 		KeyChan:  keychan,
@@ -81,7 +88,7 @@ func (e *EtcdRoot) AddKey(key string, keychan chan string, producer *MQ.KafkaPro
 	e.ConfigMap[key] = cfg
 
 	// 首次读取该 key 当前的值，若有日志路径则启动监控
-	if resp, err := e.Client.Get(ctx, key); err == nil && len(resp.Kvs) > 0 {
+	if resp, err := cli.Get(ctx, key); err == nil && len(resp.Kvs) > 0 {
 		e.applyValue(ctx, cfg, string(resp.Kvs[0].Value))
 	}
 
@@ -89,7 +96,7 @@ func (e *EtcdRoot) AddKey(key string, keychan chan string, producer *MQ.KafkaPro
 	go e.watchKey(ctx, cfg)
 }
 
-// RemoveKey 取消指定 etcd key 的监控，并从 ConfigMap 中删除。
+// RemoveKey 取消指定 etcd key 的监控，关闭其独立 client，并从 ConfigMap 中删除。
 func (e *EtcdRoot) RemoveKey(key string) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -98,13 +105,16 @@ func (e *EtcdRoot) RemoveKey(key string) {
 		if cfg.Cancel != nil {
 			cfg.Cancel()
 		}
+		if cfg.Client != nil {
+			cfg.Client.Close()
+		}
 		delete(e.ConfigMap, key)
 	}
 }
 
 // watchKey 监听单个 etcd key 的变更与删除。
 func (e *EtcdRoot) watchKey(ctx context.Context, cfg *EtcdConfig) {
-	wch := e.Client.Watch(ctx, cfg.Path)
+	wch := cfg.Client.Watch(ctx, cfg.Path)
 	for {
 		select {
 		case <-ctx.Done():
@@ -171,7 +181,7 @@ func (e *EtcdRoot) applyValue(ctx context.Context, cfg *EtcdConfig, newLogPath s
 }
 
 // UpdateEtcdLogkeys 根据新的 key 列表同步维护监控（增加/删除），与 main.go 的配置同步逻辑对齐。
-func (e *EtcdRoot) UpdateEtcdLogkeys(newKeys []string) {
+func (e *EtcdRoot) UpdateEtcdLogkeys(etcdAddr string, newKeys []string) {
 	newKeyMap := make(map[string]bool)
 	for _, k := range newKeys {
 		newKeyMap[k] = true
@@ -197,7 +207,7 @@ func (e *EtcdRoot) UpdateEtcdLogkeys(newKeys []string) {
 		_, exists := e.ConfigMap[newKey]
 		e.mu.RUnlock()
 		if !exists {
-			e.AddKey(newKey, e.getKeyChan(newKey), e.getProducer(newKey))
+			e.AddKey(newKey, etcdAddr, e.getKeyChan(newKey), e.getProducer(newKey))
 		}
 	}
 }
@@ -228,7 +238,7 @@ func (e *EtcdRoot) HasKey(key string) bool {
 	return ok
 }
 
-// Close 取消所有监控并关闭 etcd client。
+// Close 取消所有监控并关闭每个 key 的独立 etcd client。
 func (e *EtcdRoot) Close() {
 	if e.RootCancel != nil {
 		e.RootCancel()
@@ -238,9 +248,9 @@ func (e *EtcdRoot) Close() {
 		if cfg.Cancel != nil {
 			cfg.Cancel()
 		}
+		if cfg.Client != nil {
+			cfg.Client.Close()
+		}
 	}
 	e.mu.Unlock()
-	if e.Client != nil {
-		e.Client.Close()
-	}
 }
