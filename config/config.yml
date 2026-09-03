@@ -9,3 +9,15 @@ etcd:
     - "/logs/logdir1"
     - "/logs/logdir2"
     - "/logs/logdir3"
+
+kafka:
+  brokers:
+    - "localhost:9092"
+  topic: "logcatchsys"
+
+consumer:
+  group: "elasticsearch-worker"
+
+elasticsearch:
+  addr: "http://localhost:9200"
+  index: "logs"

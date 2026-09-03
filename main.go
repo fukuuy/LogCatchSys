@@ -57,11 +57,8 @@ func main() {
 	etcdAddr := v.GetString("etcd.addr")
 	etcdKeys := v.GetStringSlice("etcd.logkeys")
 	if etcdAddr != "" && len(etcdKeys) > 0 {
-		etcdClient := db.InitEtcdClient(etcdAddr)
-		if etcdClient != nil {
-			etcdRoot = db.NewEtcdRoot(ctx, etcdClient, etcdKeys, keychan, kafkaProducer)
-			fmt.Println("etcd module started, addr:", etcdAddr, "keys:", etcdKeys)
-		}
+		etcdRoot = db.NewEtcdRoot(ctx, etcdAddr, etcdKeys, keychan, kafkaProducer)
+		fmt.Println("etcd module started, addr:", etcdAddr, "keys:", etcdKeys)
 	}
 
 	// 析构函数
