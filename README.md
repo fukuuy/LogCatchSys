@@ -56,8 +56,6 @@ docker compose up -d
 - Elasticsearch: `localhost:9200`
 - Kibana: `localhost:5601`
 
-> 若提示容器名冲突，先删除旧容器：`docker rm -f kafka elasticsearch kibana`
-
 ### 2. 生成测试日志（可选）
 
 ```bash
