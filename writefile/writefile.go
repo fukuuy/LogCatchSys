@@ -12,9 +12,18 @@ import (
 )
 
 func writeLog(wg *sync.WaitGroup, datapath string) {
+	// 确保日志文件所在目录存在
+	dir := path.Dir(datapath)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		fmt.Println("mkdir err:", err)
+		wg.Done()
+		return
+	}
+
 	file, err := os.OpenFile(datapath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
 	if err != nil {
 		fmt.Println("open file err:", err)
+		wg.Done()
 		return
 	}
 
