@@ -2,7 +2,6 @@ package db
 
 import (
 	"context"
-	"fmt"
 	"logcatchsys/MQ"
 	"logcatchsys/logtailf"
 	"sync"
@@ -40,7 +39,6 @@ func InitEtcdClient(etcdAddr string) *clientv3.Client {
 		Endpoints: []string{etcdAddr},
 	})
 	if err != nil {
-		fmt.Printf("init etcd client err: %v\n", err)
 		return nil
 	}
 	return cli
@@ -72,7 +70,6 @@ func (e *EtcdRoot) AddKey(key string, etcdAddr string, keychan chan string, prod
 
 	cli := InitEtcdClient(etcdAddr)
 	if cli == nil {
-		fmt.Printf("init etcd client err, skip key: %s\n", key)
 		return
 	}
 
@@ -118,15 +115,12 @@ func (e *EtcdRoot) watchKey(ctx context.Context, cfg *EtcdConfig) {
 	for {
 		select {
 		case <-ctx.Done():
-			fmt.Printf("etcd watch goroutine exit, key: %s\n", cfg.Path)
 			return
 		case resp, ok := <-wch:
 			if !ok {
-				fmt.Printf("etcd watch channel closed, key: %s\n", cfg.Path)
 				return
 			}
 			if err := resp.Err(); err != nil {
-				fmt.Printf("etcd watch err: %v, key: %s\n", err, cfg.Path)
 				return
 			}
 			for _, ev := range resp.Events {
@@ -149,7 +143,6 @@ func (e *EtcdRoot) watchKey(ctx context.Context, cfg *EtcdConfig) {
 					}
 					delete(e.ConfigMap, cfg.Path)
 					e.mu.Unlock()
-					fmt.Printf("etcd key deleted, key: %s\n", cfg.Path)
 				}
 			}
 		}
@@ -172,11 +165,9 @@ func (e *EtcdRoot) applyValue(ctx context.Context, cfg *EtcdConfig, newLogPath s
 	cfg.Cancel = logCancel
 
 	if newLogPath == "" {
-		fmt.Printf("etcd key value empty, stop watch, key: %s\n", cfg.Path)
 		return
 	}
 
-	fmt.Printf("start watch log file by etcd, key: %s, path: %s\n", cfg.Path, newLogPath)
 	go logtailf.WatchLogFile(logCtx, newLogPath, cfg.Path, cfg.KeyChan, cfg.Producer)
 }
 

@@ -1,7 +1,6 @@
 package logtailf
 
 import (
-	"fmt"
 	"github.com/hpcloud/tail"
     "logcatchsys/MQ"
     "context"
@@ -9,8 +8,6 @@ import (
 )
 
 func WatchLogFile(ctx context.Context, datapath string, logfilepath string, pathchan chan string, producer *MQ.KafkaProducer) {
-	fmt.Println("begin goroutine watch log file ", datapath)
-
 	tailFile,err:=tail.TailFile(datapath,tail.Config{
 		//文件被移除或被打包，需要重新打开
         ReOpen: true,
@@ -24,14 +21,12 @@ func WatchLogFile(ctx context.Context, datapath string, logfilepath string, path
 	})
 
    if err != nil {
-        fmt.Printf("tail log file: %s err: %v\n", datapath, err)
         return
     }
 
     // 协程崩溃时，捕获异常并将logfilepath发送到pathchan
     defer func() {
         if err := recover(); err != nil {
-            fmt.Printf("goroutine watch %s panic: %v", logfilepath, err)
             pathchan <- logfilepath
         }
     }()
@@ -40,15 +35,11 @@ func WatchLogFile(ctx context.Context, datapath string, logfilepath string, path
         select {
         case msg, ok := <-tailFile.Lines:
             if !ok {
-                fmt.Printf("tail file close reopen, filename: %s\n", tailFile.Filename)
                 time.Sleep(100 * time.Millisecond)
                 continue
             }
-            //只打印text
-            // fmt.Println("msg:", msg.Text)
             producer.Send(logfilepath, msg.Text)
         case <-ctx.Done():
-            fmt.Printf("watch log file goroutine exit, filename: %s\n", datapath)
             return
         }
     }

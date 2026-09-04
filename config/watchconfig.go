@@ -2,7 +2,6 @@ package watchconfig
 
 import (
 	"context"
-	"fmt"
 	"path"
 	"runtime"
 	"sync"
@@ -41,17 +40,12 @@ func ReadConfig(v *viper.Viper) (any, bool) {
 func WatchConfigFile(v *viper.Viper, ctx context.Context, pathChan chan any) {
 	defer func() {
 		onceLogConf.Do(func() {
-			fmt.Println("watch config goroutine exit")
-			if err := recover(); err != nil {
-				fmt.Println("watch config goroutine panic:", err)
-			}
 			close(pathChan)
 		})
 	}()
 
 	// 设置监听配置文件的回调函数
 	v.OnConfigChange(func(event fsnotify.Event) {
-		fmt.Printf("config file: %s changed: %s\n", event.Name, event.String())
 		configPath := v.Get("configpath")
 		if configPath == nil {
 			return

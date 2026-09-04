@@ -1,7 +1,6 @@
 package MQ
 
 import (
-	"fmt"
 	"github.com/IBM/sarama"
 )
 
@@ -9,7 +8,7 @@ type KafkaProducer struct {
 	Producer sarama.SyncProducer
 }
 
-func (kp *KafkaProducer) Init(broker string)  {
+func (kp *KafkaProducer) Init(broker string) {
 	config := sarama.NewConfig()
 	config.Producer.RequiredAcks = sarama.WaitForAll
 	config.Producer.Partitioner = sarama.NewRandomPartitioner
@@ -18,7 +17,7 @@ func (kp *KafkaProducer) Init(broker string)  {
 	var err error
 	kp.Producer, err = sarama.NewSyncProducer([]string{broker}, config)
 	if err != nil {
-		fmt.Printf("Failed to start Sarama producer: %v", err)
+		return
 	}
 }
 
@@ -34,10 +33,5 @@ func (kp *KafkaProducer) Send(key string, value string) {
 		Key:   sarama.StringEncoder(key),
 		Value: sarama.StringEncoder(value),
 	}
-	partition, offset, err := kp.Producer.SendMessage(msg)
-	if err != nil {
-		fmt.Printf("Failed to send message: %v", err)
-		return
-	}
-	fmt.Printf("Message sent to partition %d at offset %d\n", partition, offset)
+	_, _, _ = kp.Producer.SendMessage(msg)
 }

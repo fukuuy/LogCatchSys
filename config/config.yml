@@ -20,4 +20,4 @@ consumer:
 
 elasticsearch:
   addr: "http://localhost:9200"
-  index: "logs"
+  index: "logcatchsys"

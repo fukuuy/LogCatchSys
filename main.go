@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"logcatchsys/DB"
 	"logcatchsys/MQ"
 	watchconfig "logcatchsys/config"
@@ -37,7 +36,6 @@ func main() {
 	v := viper.New()
 	configPaths, ok := watchconfig.ReadConfig(v)
 	if configPaths == nil || !ok {
-		fmt.Println("读取配置文件失败")
 		return
 	}
 
@@ -58,15 +56,11 @@ func main() {
 	etcdKeys := v.GetStringSlice("etcd.logkeys")
 	if etcdAddr != "" && len(etcdKeys) > 0 {
 		etcdRoot = db.NewEtcdRoot(ctx, etcdAddr, etcdKeys, keychan, kafkaProducer)
-		fmt.Println("etcd module started, addr:", etcdAddr, "keys:", etcdKeys)
 	}
 
 	// 析构函数
 	defer func() {
 		mainOnce.Do(func() {
-			if err := recover(); err != nil {
-				fmt.Println("main goroutine panic:", err)
-			}
 			cancel()
 			for _, oldvalue := range configMap {
 				oldvalue.ConfigCancel()
@@ -83,7 +77,6 @@ func main() {
 	for {
 		select {
 		case pathData := <-pathChan:
-			fmt.Println("收到配置文件变化通知:", pathData)
 			pathNew, ok := pathData.(map[string]any)
 			if !ok {
 				continue
@@ -128,24 +121,13 @@ func main() {
 				}
 			}
 
-			for configkey, configvalue := range configMap {
-				fmt.Printf("配置项: %s, 配置值: %s\n", configkey, configvalue.ConfigPath)
-			}
-
 		case keypath := <-keychan:
-			fmt.Println("收到goroutine崩溃通知:", keypath)
 			configData, ok := configMap[keypath]
 			if ok {
-				fmt.Println("recover goroutine watch ", keypath)
 				// 重新开启goroutine监控日志文件
 				var ctx context.Context
 				ctx, configData.ConfigCancel = context.WithCancel(context.Background())
 				go logtailf.WatchLogFile(ctx, configData.ConfigPath, keypath, keychan, kafkaProducer)
-				continue
-			}
-			// 若是 etcd 管理的 key，则通过 etcd watch 自动恢复（无需手动处理）
-			if etcdRoot != nil && etcdRoot.HasKey(keypath) {
-				fmt.Println("etcd goroutine crash, watch will recover via etcd, key:", keypath)
 			}
 		}
 	}

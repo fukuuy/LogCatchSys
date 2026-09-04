@@ -2,7 +2,6 @@ package MQ
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/IBM/sarama"
 )
@@ -12,11 +11,11 @@ type OnMessage func(key []byte, value []byte)
 
 // KafkaConsumer 使用 ConsumerGroup 消费 kafka 消息，支持水平扩展与 offset 自动管理。
 type KafkaConsumer struct {
-	brokers  []string
-	groupID  string
-	topics   []string
-	group    sarama.ConsumerGroup
-	onMessage OnMessage
+	brokers    []string
+	groupID    string
+	topics     []string
+	group      sarama.ConsumerGroup
+	onMessage  OnMessage
 }
 
 // groupHandler 实现 sarama.ConsumerGroupHandler 接口。
@@ -42,7 +41,6 @@ func (h *groupHandler) ConsumeClaim(s sarama.ConsumerGroupSession, claim sarama.
 			if h.onMessage != nil {
 				h.onMessage(msg.Key, msg.Value)
 			}
-			// 处理完成后标记，提交 offset
 			s.MarkMessage(msg, "")
 		case <-s.Context().Done():
 			return nil
@@ -55,10 +53,10 @@ func (kc *KafkaConsumer) Init(brokers []string, groupID string, topics []string)
 	config := sarama.NewConfig()
 	config.Consumer.Return.Errors = true
 	config.Consumer.Offsets.Initial = sarama.OffsetNewest
+	config.Version = sarama.V2_1_0_0
 
 	client, err := sarama.NewConsumerGroup(brokers, groupID, config)
 	if err != nil {
-		fmt.Printf("Failed to start Sarama consumer group: %v\n", err)
 		return err
 	}
 
@@ -79,14 +77,11 @@ func (kc *KafkaConsumer) Run(ctx context.Context) error {
 	handler := &groupHandler{onMessage: kc.onMessage}
 	for {
 		if err := kc.group.Consume(ctx, kc.topics, handler); err != nil {
-			// 正常退出
 			if ctx.Err() != nil {
 				return nil
 			}
-			fmt.Printf("kafka consumer group error: %v\n", err)
 			continue
 		}
-		// Consume 返回后若 ctx 未取消则重新平衡，循环继续
 		if ctx.Err() != nil {
 			return nil
 		}
@@ -96,8 +91,6 @@ func (kc *KafkaConsumer) Run(ctx context.Context) error {
 // Close 关闭消费组 client。
 func (kc *KafkaConsumer) Close() {
 	if kc.group != nil {
-		if err := kc.group.Close(); err != nil {
-			fmt.Printf("close kafka consumer group err: %v\n", err)
-		}
+		_ = kc.group.Close()
 	}
 }

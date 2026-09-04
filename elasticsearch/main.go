@@ -118,13 +118,24 @@ func (w *EsWriter) flush() {
 	for attempt := 0; attempt < 3; attempt++ {
 		res, err := w.client.Bulk(bytes.NewReader(buf.Bytes()))
 		if err != nil {
-			fmt.Printf("bulk write es err: %v, retry %d\n", err, attempt+1)
 			time.Sleep(time.Second)
 			continue
 		}
-		res.Body.Close()
 		if res.IsError() {
-			fmt.Printf("bulk write es response error: %s, retry %d\n", res.Status(), attempt+1)
+			res.Body.Close()
+			if attempt < 2 {
+				time.Sleep(time.Second)
+				continue
+			}
+			break
+		}
+		// 检查单条 item 是否被拒绝（如数据流只允许 create 操作），避免静默丢数据
+		var br struct {
+			Errors bool `json:"errors"`
+		}
+		_ = json.NewDecoder(res.Body).Decode(&br)
+		res.Body.Close()
+		if br.Errors {
 			if attempt < 2 {
 				time.Sleep(time.Second)
 				continue
@@ -180,7 +191,6 @@ func main() {
 		Addresses: []string{esAddr},
 	})
 	if err != nil {
-		fmt.Printf("init elasticsearch client err: %v\n", err)
 		return
 	}
 
@@ -196,7 +206,6 @@ func main() {
 	// 初始化 Kafka 消费组
 	consumer := &MQ.KafkaConsumer{}
 	if err := consumer.Init(brokers, groupID, []string{topic}); err != nil {
-		fmt.Printf("init kafka consumer err: %v\n", err)
 		return
 	}
 	consumer.SetOnMessage(func(key, value []byte) {
@@ -221,14 +230,8 @@ func main() {
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 	go func() {
 		<-sigCh
-		fmt.Println("received shutdown signal, exiting...")
 		cancel()
 	}()
 
-	fmt.Printf("elasticsearch worker started, brokers=%v topic=%s group=%s es=%s index=%s\n",
-		brokers, topic, groupID, esAddr, esIndex)
-
-	if err := consumer.Run(ctx); err != nil {
-		fmt.Printf("kafka consumer run err: %v\n", err)
-	}
+	_ = consumer.Run(ctx)
 }
